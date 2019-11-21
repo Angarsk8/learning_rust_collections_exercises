@@ -1,13 +1,15 @@
 mod exercises {
   pub mod hashmaps {
     pub mod program {
+      use serde::{Deserialize, Serialize};
       use std::collections::HashMap;
-      use std::io;
+      use std::io::{self, Read, Write};
 
       fn print_with_indent(text: String, level: usize) {
         println!("{}{}", " ".repeat(level), text);
       }
 
+      #[derive(Serialize, Deserialize)]
       struct NaiveStore {
         state: HashMap<String, Vec<String>>,
       }
@@ -17,6 +19,32 @@ mod exercises {
           NaiveStore {
             state: HashMap::new(),
           }
+        }
+
+        fn load_from_disk(&mut self) -> io::Result<()> {
+          let mut file_result = std::fs::File::open("state.json");
+
+          match file_result.as_mut() {
+            Ok(file) => {
+              let mut contents = String::new();
+
+              file.read_to_string(&mut contents)?;
+
+              let state_from_disk = serde_json::from_str(&contents[..])?;
+
+              self.state = state_from_disk;
+            }
+            Err(_) => (),
+          }
+
+          Ok(())
+        }
+
+        pub fn persist_to_disk(&self) -> io::Result<()> {
+          let state_as_json = serde_json::to_string(&self.state)?;
+          let mut file = std::fs::File::create("state.json")?;
+          file.write_all(&mut state_as_json.as_bytes())?;
+          Ok(())
         }
 
         pub fn add(&mut self, employee: String, department: String) {
@@ -76,9 +104,7 @@ mod exercises {
       }
 
       fn parse_input(input: String) -> Option<Command> {
-        let parsed_input = input.trim();
-        let mut cmd_parts = parsed_input.split_ascii_whitespace();
-
+        let mut cmd_parts = input.trim().split_ascii_whitespace();
         match cmd_parts.next()? {
           ":add" => {
             let person = cmd_parts.next()?;
@@ -136,6 +162,8 @@ mod exercises {
       pub fn cli() {
         let mut store: NaiveStore = NaiveStore::new();
 
+        store.load_from_disk().unwrap();
+
         println!(
           "Welcome to the system. You can perform the following operations:\n{}",
           help()
@@ -148,7 +176,7 @@ mod exercises {
 
           match parse_input(input) {
             Some(Command::Help) => println!("{}", help()),
-            Some(Command::Quit) => break,
+            Some(Command::Quit) => break store.persist_to_disk().unwrap(),
             Some(command) => handle_command(&mut store, command),
             None => {
               print_with_indent("Incorrect given input (:help)".to_owned(), 2);
